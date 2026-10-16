@@ -1,10 +1,10 @@
 /**
- * HYP3 Client Admin Console - Vanilla JS
+ * HYP3 Client Admin Console - Vanilla JS + Supabase Integration
  * Uses first principles of Web Development: Pure JS DOM manipulation & events
- * Ready to plug into Supabase Client SDK or run in local mock preview mode.
+ * Works with live Supabase database or seamlessly falls back to local state.
  */
 
-// Initial Seed / Mock Catalog
+// Initial Catalog (Used as fallback if offline)
 let products = [
   {
     id: 'shatter',
@@ -52,52 +52,15 @@ let products = [
   }
 ];
 
-// Initial Seed / Mock Orders
-let orders = [
-  {
-    id: 'ORD-98214',
-    date: '2026-10-16 21:40',
-    customerName: 'Aarav Sharma',
-    customerPhone: '+91 98765 43210',
-    customerEmail: 'aarav.sharma@gmail.com',
-    shippingAddress: '42, Indiranagar 100ft Rd, Bangalore 560038',
-    item: 'SHATTER (01)',
-    size: 'L',
-    amount: 1199,
-    utr: '429188291039',
-    status: 'pending'
-  },
-  {
-    id: 'ORD-98215',
-    date: '2026-10-16 20:15',
-    customerName: 'Rhea Sengupta',
-    customerPhone: '+91 98112 34567',
-    customerEmail: 'rhea.s@outlook.com',
-    shippingAddress: 'Flat 4B, Park Street Towers, Kolkata 700016',
-    item: 'SPIRAL (02)',
-    size: 'M',
-    amount: 1199,
-    utr: '429177182901',
-    status: 'confirmed'
-  },
-  {
-    id: 'ORD-98216',
-    date: '2026-10-16 18:02',
-    customerName: 'Kabir Verma',
-    customerPhone: '+91 99201 88471',
-    customerEmail: 'kabir.v@gmail.com',
-    shippingAddress: '12, Bandra West, Mumbai 400050',
-    item: 'CORE (03)',
-    size: 'XL',
-    amount: 1199,
-    utr: '429155291840',
-    status: 'shipped'
-  }
-];
+// Initial Orders (Used as fallback if offline)
+let orders = [];
 
 // State
 let activeTab = 'orders';
 let editingProductId = null;
+let selectedImageFile = null;
+let uploadedImageUrl = '../assets/shatter.png';
+let supabase = null;
 
 // DOM Elements
 const authView = document.getElementById('authView');
@@ -127,13 +90,13 @@ const cancelProductBtn = document.getElementById('cancelProductBtn');
 const productForm = document.getElementById('productForm');
 
 // 1. Auth Flow
-loginForm.addEventListener('submit', (e) => {
+loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = document.getElementById('loginEmail').value;
   currentUserEmail.textContent = email;
   authView.classList.add('hidden');
   appView.classList.remove('hidden');
-  renderDashboard();
+  await initSupabaseAndData();
 });
 
 logoutBtn.addEventListener('click', () => {
@@ -202,8 +165,8 @@ function renderOrders() {
   const filteredOrders = orders.filter(order => {
     const matchesFilter = (filter === 'all') || (order.status === filter);
     const matchesSearch = !query || 
-      order.id.toLowerCase().includes(query) ||
-      order.customerName.toLowerCase().includes(query) ||
+      (order.id && order.id.toLowerCase().includes(query)) ||
+      (order.customerName && order.customerName.toLowerCase().includes(query)) ||
       (order.utr && order.utr.toLowerCase().includes(query)) ||
       (order.customerPhone && order.customerPhone.includes(query));
     return matchesFilter && matchesSearch;
@@ -227,14 +190,14 @@ function renderOrders() {
         <td><strong style="color:var(--brand-black); font-weight:600;">${order.id}</strong></td>
         <td style="color:var(--text-secondary); font-size: 12px; white-space: nowrap;">${order.date}</td>
         <td>
-          <div style="font-weight:600; color:var(--brand-black);">${order.customerName}</div>
-          <div style="font-size:12px; color:var(--text-secondary);">${order.customerPhone}</div>
+          <div style="font-weight:600; color:var(--brand-black);">${order.customerName || 'Customer'}</div>
+          <div style="font-size:12px; color:var(--text-secondary);">${order.customerPhone || 'N/A'}</div>
         </td>
         <td>
           <div style="font-weight:500;">${order.item}</div>
           <div style="font-size:11.5px; color:var(--text-muted);">Size: ${order.size}</div>
         </td>
-        <td style="font-weight:600; font-family:var(--font-mono);">₹${order.amount.toLocaleString('en-IN')}</td>
+        <td style="font-weight:600; font-family:var(--font-mono);">₹${Number(order.amount || 0).toLocaleString('en-IN')}</td>
         <td>
           <span class="code-tag">
             ${order.utr || 'Pending'}
@@ -248,7 +211,6 @@ function renderOrders() {
             <option value="pending" ${order.status === 'pending' ? 'selected' : ''}>Pending</option>
             <option value="confirmed" ${order.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
             <option value="shipped" ${order.status === 'shipped' ? 'selected' : ''}>Shipped</option>
-            <option value="cancelled" ${order.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
           </select>
         </td>
       </tr>
@@ -256,26 +218,32 @@ function renderOrders() {
   }).join('');
 }
 
-// Order Status Handler
-window.changeOrderStatus = function(orderId, newStatus) {
+window.changeOrderStatus = async function(orderId, newStatus) {
   const order = orders.find(o => o.id === orderId);
   if (order) {
     order.status = newStatus;
     renderOrders();
+
+    if (supabase) {
+      try {
+        await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+      } catch (err) {
+        console.error('Failed to update status in Supabase:', err);
+      }
+    }
   }
 };
 
 orderSearch.addEventListener('input', renderOrders);
 statusFilter.addEventListener('change', renderOrders);
 
-// 5. Excel Export (.xlsx) via SheetJS
+// 5. Excel Export with SheetJS
 exportExcelBtn.addEventListener('click', () => {
   if (orders.length === 0) {
-    alert('No orders to export.');
+    alert('No orders available to export.');
     return;
   }
 
-  // Format data cleanly for spreadsheet
   const exportData = orders.map((o, idx) => ({
     'Sr No': idx + 1,
     'Order ID': o.id,
@@ -288,45 +256,38 @@ exportExcelBtn.addEventListener('click', () => {
     'Size': o.size,
     'Amount (INR)': o.amount,
     'UPI UTR Reference': o.utr || 'N/A',
-    'Status': o.status.toUpperCase()
+    'Status': (o.status || '').toUpperCase()
   }));
 
-  // Create worksheet
   const worksheet = XLSX.utils.json_to_sheet(exportData);
-  
-  // Set automatic column widths
   const colWidths = [
-    { wch: 8 },  // Sr No
-    { wch: 14 }, // Order ID
-    { wch: 18 }, // Date
-    { wch: 20 }, // Name
-    { wch: 16 }, // Phone
-    { wch: 24 }, // Email
-    { wch: 40 }, // Address
-    { wch: 18 }, // Item
-    { wch: 8 },  // Size
-    { wch: 14 }, // Amount
-    { wch: 18 }, // UTR
-    { wch: 14 }  // Status
+    { wch: 8 },  { wch: 14 }, { wch: 18 }, { wch: 20 },
+    { wch: 16 }, { wch: 24 }, { wch: 40 }, { wch: 18 },
+    { wch: 8 },  { wch: 14 }, { wch: 18 }, { wch: 14 }
   ];
   worksheet['!cols'] = colWidths;
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders');
 
-  // Trigger download
   const dateStr = new Date().toISOString().split('T')[0];
   XLSX.writeFile(workbook, `HYP3_Orders_${dateStr}.xlsx`);
 });
 
-// 6. Render Products as Clean Merchant Cards
+// 6. Render Products Grid
 function renderProducts() {
-  const prodCountEl = document.getElementById('navProdCount');
-  if (prodCountEl) prodCountEl.textContent = products.length;
+  if (products.length === 0) {
+    productsGrid.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; padding: 48px; color: var(--text-muted);">
+        No drops in catalog. Click <strong>+ Add New Drop</strong> to create one.
+      </div>
+    `;
+    return;
+  }
 
   productsGrid.innerHTML = products.map(p => {
     return `
-      <div class="merchant-product-card">
+      <div class="product-card">
         <div class="product-card-preview">
           <img src="${p.image}" alt="${p.name}" onerror="this.src='../assets/shatter.png'">
         </div>
@@ -336,7 +297,7 @@ function renderProducts() {
           <div class="product-card-subtitle">${p.subtitle}</div>
 
           <div class="product-card-row">
-            <span class="product-card-price">₹${p.price.toLocaleString('en-IN')}</span>
+            <span class="product-card-price">₹${Number(p.price || 0).toLocaleString('en-IN')}</span>
             <span class="product-card-inventory" style="${p.stock < 15 ? 'color:#d97706; font-weight:600;' : ''}">${p.stock} in stock</span>
           </div>
 
@@ -354,10 +315,18 @@ function renderProducts() {
   }).join('');
 }
 
-window.deleteProduct = function(prodId) {
+window.deleteProduct = async function(prodId) {
   if (confirm('Are you sure you want to remove this product from the catalog?')) {
     products = products.filter(p => p.id !== prodId);
     renderProducts();
+
+    if (supabase) {
+      try {
+        await supabase.from('products').delete().eq('id', prodId);
+      } catch (err) {
+        console.error('Failed to delete product from Supabase:', err);
+      }
+    }
   }
 };
 
@@ -366,18 +335,18 @@ window.openEditProductModal = function(prodId) {
   if (!prod) return;
 
   editingProductId = prodId;
+  selectedImageFile = null;
   document.getElementById('productModalTitle').textContent = `Edit Drop #${prod.num} — ${prod.name}`;
   document.getElementById('prodNum').value = prod.num || '';
   document.getElementById('prodName').value = prod.name || '';
   document.getElementById('prodSubtitle').value = prod.subtitle || '';
   document.getElementById('prodPrice').value = prod.price || '';
   document.getElementById('prodStock').value = prod.stock || 0;
-  document.getElementById('prodSizes').value = (prod.sizes || []).join(', ');
+  document.getElementById('prodSizes').value = Array.isArray(prod.sizes) ? prod.sizes.join(', ') : (prod.sizes || '');
   document.getElementById('prodDesc').value = prod.description || '';
 
-  // Show existing image
   if (prod.image) {
-    uploadedImageDataUrl = prod.image;
+    uploadedImageUrl = prod.image;
     imagePreview.src = prod.image;
     dropzonePrompt.classList.add('hidden');
     imagePreviewContainer.classList.remove('hidden');
@@ -388,9 +357,7 @@ window.openEditProductModal = function(prodId) {
   productModal.classList.add('open');
 };
 
-// 7. Add Product Modal Flow & Direct Image Upload
-let uploadedImageDataUrl = '../assets/shatter.png'; // fallback default
-
+// 7. Image Upload Logic (Supabase Storage support)
 const imageDropzone = document.getElementById('imageDropzone');
 const prodImageFile = document.getElementById('prodImageFile');
 const dropzonePrompt = document.getElementById('dropzonePrompt');
@@ -432,10 +399,10 @@ function handleSelectedImage(file) {
     alert('Please upload an image file (PNG, JPG, WEBP).');
     return;
   }
+  selectedImageFile = file;
   const reader = new FileReader();
   reader.onload = (e) => {
-    uploadedImageDataUrl = e.target.result;
-    imagePreview.src = uploadedImageDataUrl;
+    imagePreview.src = e.target.result;
     dropzonePrompt.classList.add('hidden');
     imagePreviewContainer.classList.remove('hidden');
   };
@@ -448,7 +415,8 @@ removeImageBtn.addEventListener('click', (e) => {
 });
 
 function resetImageDropzone() {
-  uploadedImageDataUrl = '../assets/shatter.png';
+  selectedImageFile = null;
+  uploadedImageUrl = '../assets/shatter.png';
   prodImageFile.value = '';
   imagePreview.src = '';
   dropzonePrompt.classList.remove('hidden');
@@ -457,6 +425,7 @@ function resetImageDropzone() {
 
 openAddProductModal.addEventListener('click', () => {
   editingProductId = null;
+  selectedImageFile = null;
   document.getElementById('productModalTitle').textContent = 'Add New Drop';
   productForm.reset();
   resetImageDropzone();
@@ -466,56 +435,154 @@ openAddProductModal.addEventListener('click', () => {
 function closeModal() {
   productModal.classList.remove('open');
   editingProductId = null;
+  selectedImageFile = null;
 }
 
 closeProductModal.addEventListener('click', closeModal);
 cancelProductBtn.addEventListener('click', closeModal);
 
-productForm.addEventListener('submit', (e) => {
+productForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const num = document.getElementById('prodNum').value;
   const name = document.getElementById('prodName').value.toUpperCase();
   const subtitle = document.getElementById('prodSubtitle').value;
   const price = Number(document.getElementById('prodPrice').value);
   const stock = Number(document.getElementById('prodStock').value);
-  const sizes = document.getElementById('prodSizes').value.split(',').map(s => s.trim());
+  const sizes = document.getElementById('prodSizes').value.split(',').map(s => s.trim()).filter(Boolean);
   const desc = document.getElementById('prodDesc').value;
 
-  if (editingProductId) {
-    // Update existing product
-    const prod = products.find(p => p.id === editingProductId);
-    if (prod) {
-      prod.num = num;
-      prod.name = name;
-      prod.subtitle = subtitle;
-      prod.price = price;
-      prod.stock = stock;
-      prod.image = uploadedImageDataUrl;
-      prod.sizes = sizes;
-      prod.description = desc;
+  let finalImageUrl = uploadedImageUrl;
+
+  // If user selected a new file and Supabase is connected, upload to product-images bucket
+  if (selectedImageFile && supabase) {
+    try {
+      const ext = selectedImageFile.name.split('.').pop() || 'png';
+      const fileName = `${Date.now()}-${name.toLowerCase().replace(/\s+/g, '-')}.${ext}`;
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('product-images')
+        .upload(fileName, selectedImageFile, { upsert: true });
+
+      if (!uploadErr && uploadData) {
+        const { data: publicUrlData } = supabase.storage
+          .from('product-images')
+          .getPublicUrl(fileName);
+        if (publicUrlData && publicUrlData.publicUrl) {
+          finalImageUrl = publicUrlData.publicUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Storage upload error, using local fallback:', err);
     }
+  }
+
+  const id = editingProductId || name.toLowerCase().replace(/\s+/g, '-');
+  const productPayload = {
+    id,
+    num,
+    name,
+    subtitle,
+    price,
+    stock,
+    sizes,
+    image: finalImageUrl,
+    description: desc
+  };
+
+  if (editingProductId) {
+    const idx = products.findIndex(p => p.id === editingProductId);
+    if (idx !== -1) products[idx] = productPayload;
   } else {
-    // Add new product
-    const newProduct = {
-      id: name.toLowerCase().replace(/\s+/g, '-'),
-      num: num,
-      name: name,
-      subtitle: subtitle,
-      price: price,
-      stock: stock,
-      image: uploadedImageDataUrl,
-      sizes: sizes,
-      description: desc
-    };
-    products.push(newProduct);
+    products.push(productPayload);
+  }
+
+  if (supabase) {
+    try {
+      await supabase.from('products').upsert(productPayload);
+    } catch (err) {
+      console.error('Failed to save to Supabase:', err);
+    }
   }
 
   renderProducts();
   closeModal();
 });
 
-// Initialization
-function renderDashboard() {
+// 8. Live Supabase Synchronization
+async function initSupabaseAndData() {
+  if (window.getSupabase) {
+    supabase = await window.getSupabase();
+  }
+
+  if (supabase) {
+    // 1. Fetch live products
+    try {
+      const { data: dbProducts, error: prodErr } = await supabase.from('products').select('*').order('num', { ascending: true });
+      if (!prodErr && dbProducts && dbProducts.length > 0) {
+        products = dbProducts;
+      }
+    } catch (e) {
+      console.warn('Error fetching products from Supabase:', e);
+    }
+
+    // 2. Fetch live orders
+    try {
+      const { data: dbOrders, error: orderErr } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+      if (!orderErr && dbOrders) {
+        orders = dbOrders.map(o => ({
+          id: o.id,
+          date: o.created_at ? new Date(o.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Just now',
+          customerName: o.customer_name || 'Anonymous',
+          customerPhone: o.customer_phone || 'N/A',
+          customerEmail: o.customer_email || '',
+          shippingAddress: o.shipping_address || '',
+          item: o.item,
+          size: o.size,
+          amount: Number(o.amount || 0),
+          utr: o.utr || 'Pending',
+          status: o.status || 'pending'
+        }));
+      }
+    } catch (e) {
+      console.warn('Error fetching orders from Supabase:', e);
+    }
+
+    // 3. Realtime listener for incoming orders
+    try {
+      supabase.channel('admin-orders')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+          console.log('⚡ Live order update received:', payload);
+          // Refetch or update orders list
+          if (payload.eventType === 'INSERT') {
+            const o = payload.new;
+            orders.unshift({
+              id: o.id,
+              date: new Date(o.created_at || Date.now()).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+              customerName: o.customer_name || 'Anonymous',
+              customerPhone: o.customer_phone || 'N/A',
+              customerEmail: o.customer_email || '',
+              shippingAddress: o.shipping_address || '',
+              item: o.item,
+              size: o.size,
+              amount: Number(o.amount || 0),
+              utr: o.utr || 'Pending',
+              status: o.status || 'pending'
+            });
+            renderOrders();
+          } else if (payload.eventType === 'UPDATE') {
+            const idx = orders.findIndex(o => o.id === payload.new.id);
+            if (idx !== -1) {
+              orders[idx].status = payload.new.status;
+              orders[idx].utr = payload.new.utr;
+              renderOrders();
+            }
+          }
+        })
+        .subscribe();
+    } catch (e) {
+      console.warn('Realtime subscription failed:', e);
+    }
+  }
+
   renderOrders();
   renderProducts();
 }
