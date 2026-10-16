@@ -150,7 +150,14 @@ function generateUpiUri({ vpa, payeeName, amount, orderId, note }) {
   return `upi://pay?${params.toString()}`;
 }
 
-// API Routes
+// Public configuration endpoint (reads variables injected by Vercel Supabase integration)
+app.get('/api/config', (req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
