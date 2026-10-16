@@ -17,6 +17,15 @@ app.use(express.json());
 // Serve frontend static assets from parent directory
 app.use(express.static(path.join(__dirname, '..')));
 
+// Explicit route handlers for root and admin
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'admin', 'index.html'));
+});
+
 // Product catalog
 const PRODUCTS = [
   {
