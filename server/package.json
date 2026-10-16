@@ -1,0 +1,15 @@
+{
+  "name": "hyp3-backend",
+  "version": "1.0.0",
+  "description": "HYP3 Thermal Streetwear Backend API",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

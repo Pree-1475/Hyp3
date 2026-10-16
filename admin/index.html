@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HYP3 Store Admin</title>
+  <link rel="stylesheet" href="admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- ================= AUTH VIEW ================= -->
+  <div id="authView" class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">
+          <span>HYP3</span>
+          <span class="auth-badge">Store Admin</span>
+        </div>
+        <p class="auth-subtitle">Sign in to manage orders and catalog</p>
+      </div>
+      <form id="loginForm">
+        <div class="form-field">
+          <label class="field-label">Email</label>
+          <input type="email" id="loginEmail" class="input-text" placeholder="merchant@hyp3.com" value="admin@hyp3.com" required>
+        </div>
+        <div class="form-field">
+          <label class="field-label">Password</label>
+          <input type="password" id="loginPassword" class="input-text" placeholder="••••••••••••" value="password123" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 10px; padding: 9px;">
+          Log in
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= APP VIEW ================= -->
+  <div id="appView" class="app-container hidden">
+
+    <!-- Mobile Top Header -->
+    <header class="mobile-topbar">
+      <div style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+        <span class="store-avatar" style="width:24px; height:24px; font-size:10px;">H3</span>
+        <span>HYP3 Store</span>
+      </div>
+      <button id="mobileMenuToggle" class="icon-btn" aria-label="Open Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </header>
+
+    <div id="sidebarBackdrop" class="backdrop-shield"></div>
+
+    <!-- Shopify/Linear Style Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="store-selector">
+        <div class="store-info">
+          <div class="store-avatar">H3</div>
+          <div>
+            <div class="store-name">HYP3 Streetwear</div>
+            <div class="store-role">Store Manager</div>
+          </div>
+        </div>
+        <button id="sidebarCloseBtn" class="icon-btn" style="display:none;" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="nav-section-title">Store Management</div>
+      <ul class="nav-links">
+        <li>
+          <button class="nav-btn active" data-tab="orders">
+            <svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span>Orders</span>
+            <span class="nav-counter" id="navOrderCount">3</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="products">
+            <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+            <span>Products</span>
+            <span class="nav-counter" id="navProdCount">4</span>
+          </button>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <div class="user-row">
+          <div class="user-meta" id="currentUserEmail">admin@hyp3.com</div>
+          <button id="logoutBtn" class="icon-btn" title="Log out">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Canvas -->
+    <main class="main-content">
+      
+      <!-- ================= ORDERS VIEW ================= -->
+      <section id="tab-orders">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Orders</h1>
+            <p class="view-subtitle">Review incoming checkouts, verify UPI references, and fulfill shipments.</p>
+          </div>
+          <div class="header-actions">
+            <button id="exportExcelBtn" class="btn btn-secondary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export Orders (Excel)
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric Summary Cards -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">Total Sales</span>
+            </div>
+            <div class="metric-number" id="statRevenue">₹0</div>
+            <div class="metric-desc">Lifetime order volume</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">Total Orders</span>
+            </div>
+            <div class="metric-number" id="statTotalOrders">0</div>
+            <div class="metric-desc">Inbound orders</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">Needs Verification</span>
+            </div>
+            <div class="metric-number" style="color: #b78103;" id="statPendingOrders">0</div>
+            <div class="metric-desc">Awaiting UPI confirmation</div>
+          </div>
+        </div>
+
+        <!-- Clean Orders Table Card -->
+        <div class="card-table">
+          <div class="table-filter-bar">
+            <div class="search-box">
+              <svg class="search-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="orderSearch" placeholder="Filter orders by customer, UTR, ID...">
+            </div>
+            <div>
+              <select id="statusFilter" class="select-filter">
+                <option value="all">All payment statuses</option>
+                <option value="pending">Pending UTR</option>
+                <option value="confirmed">Confirmed / Paid</option>
+                <option value="shipped">Shipped</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-scroll">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Date</th>
+                  <th>Customer</th>
+                  <th>Items</th>
+                  <th>Total</th>
+                  <th>UPI Reference (UTR)</th>
+                  <th>Payment Status</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="ordersTableBody">
+                <!-- Injected via admin.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= PRODUCTS VIEW ================= -->
+      <section id="tab-products" class="hidden">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Products</h1>
+            <p class="view-subtitle">Manage store inventory, edit pricing, and add new garment drops.</p>
+          </div>
+          <div class="header-actions">
+            <button id="openAddProductModal" class="btn btn-primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Product
+            </button>
+          </div>
+        </div>
+
+        <!-- Clean Merchant Product Cards Grid -->
+        <div class="product-cards-grid" id="productsGrid">
+          <!-- Injected via admin.js -->
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ================= ADD / EDIT PRODUCT MODAL ================= -->
+  <div id="productModal" class="modal-overlay">
+    <div class="modal-sheet">
+      <div class="modal-header-bar">
+        <h2 class="modal-heading" id="productModalTitle">Add Product</h2>
+        <button class="icon-btn" id="closeProductModal">&times;</button>
+      </div>
+      <form id="productForm">
+        <div class="modal-body">
+          <div class="field-row">
+            <div class="form-field">
+              <label class="field-label">Drop Number</label>
+              <input type="text" id="prodNum" class="input-text" placeholder="05" required>
+            </div>
+            <div class="form-field">
+              <label class="field-label">Product Title</label>
+              <input type="text" id="prodName" class="input-text" placeholder="ECLIPSE" required>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label">Category / Subtitle</label>
+            <input type="text" id="prodSubtitle" class="input-text" placeholder="Thermal Vinyl Graphic Tee" required>
+          </div>
+
+          <div class="field-row">
+            <div class="form-field">
+              <label class="field-label">Price (INR)</label>
+              <input type="number" id="prodPrice" class="input-text" placeholder="1199" required>
+            </div>
+            <div class="form-field">
+              <label class="field-label">Inventory Quantity</label>
+              <input type="number" id="prodStock" class="input-text" placeholder="25" required>
+            </div>
+          </div>
+
+          <!-- Product Image Upload -->
+          <div class="form-field">
+            <label class="field-label">Product Image</label>
+            <input type="file" id="prodImageFile" accept="image/*" style="display: none;">
+            
+            <div class="upload-dropzone" id="imageDropzone">
+              <div id="dropzonePrompt">
+                <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div style="font-weight: 500; font-size: 13px; color: var(--text-primary);">Upload an image</div>
+                <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Drag and drop PNG or JPG here, or click to browse</div>
+              </div>
+
+              <div id="imagePreviewContainer" class="hidden">
+                <div class="preview-box">
+                  <img id="imagePreview" class="preview-image" src="" alt="Preview">
+                  <div style="flex:1; text-align:left;">
+                    <div style="font-weight:500; font-size:12.5px;" id="previewFileName">product-image.png</div>
+                    <div style="font-size:11px; color:var(--text-muted);">Ready to save</div>
+                  </div>
+                  <button type="button" id="removeImageBtn" class="btn btn-secondary btn-sm" style="color:#d32f2f;">Remove</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label">Available Sizes</label>
+            <input type="text" id="prodSizes" class="input-text" value="S, M, L, XL, XXL" required>
+          </div>
+
+          <div class="form-field" style="margin-bottom:0;">
+            <label class="field-label">Description</label>
+            <textarea id="prodDesc" class="input-textarea" rows="3" placeholder="Fabric specifications, GSM, wash instructions..."></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelProductBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveProductBtn">Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
