@@ -89,16 +89,43 @@ const cancelProductBtn = document.getElementById('cancelProductBtn');
 const productForm = document.getElementById('productForm');
 
 // 1. Auth Flow
-loginForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('loginEmail').value;
-  currentUserEmail.textContent = email;
+const VALID_ADMIN_USER = 'saiteja';
+const VALID_ADMIN_PASS = 'hyp3@tee';
+
+// Check existing session
+if (sessionStorage.getItem('hyp3_auth') === 'true') {
   authView.classList.add('hidden');
   appView.classList.remove('hidden');
-  await initSupabaseAndData();
+  currentUserEmail.textContent = sessionStorage.getItem('hyp3_user') || VALID_ADMIN_USER;
+  initSupabaseAndData();
+}
+
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const loginError = document.getElementById('loginError');
+
+  if ((username.toLowerCase() === VALID_ADMIN_USER || username.toLowerCase() === 'admin') && password === VALID_ADMIN_PASS) {
+    if (loginError) loginError.style.display = 'none';
+    currentUserEmail.textContent = username;
+    sessionStorage.setItem('hyp3_auth', 'true');
+    sessionStorage.setItem('hyp3_user', username);
+    authView.classList.add('hidden');
+    appView.classList.remove('hidden');
+    await initSupabaseAndData();
+  } else {
+    if (loginError) {
+      loginError.style.display = 'block';
+    } else {
+      alert('Invalid username or password');
+    }
+  }
 });
 
 logoutBtn.addEventListener('click', () => {
+  sessionStorage.removeItem('hyp3_auth');
+  sessionStorage.removeItem('hyp3_user');
   appView.classList.add('hidden');
   authView.classList.remove('hidden');
 });
