@@ -1,0 +1,37 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/2426456693/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-deployer@teepresso-507204.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy hyp3 \
+            --source . \
+            --region asia-south1 \
+            --allow-unauthenticated \
+            --set-env-vars "DATABASE_URL=postgresql://neondb_owner:npg_e1uQ0RlqHxKS@ep-weathered-flower-aziqw39r-pooler.c-3.ap-southeast-1.aws.neon.tech/hyp3?sslmode=require,GCS_BUCKET=teepresso-hyp3-media,UPI_VPA=8341591987@superyes" \
+            --project teepresso-507204
