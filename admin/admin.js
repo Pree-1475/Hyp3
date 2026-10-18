@@ -60,7 +60,6 @@ let activeTab = 'orders';
 let editingProductId = null;
 let selectedImageFile = null;
 let uploadedImageUrl = '../assets/shatter.png';
-let supabase = null;
 
 // DOM Elements
 const authView = document.getElementById('authView');
@@ -224,12 +223,14 @@ window.changeOrderStatus = async function(orderId, newStatus) {
     order.status = newStatus;
     renderOrders();
 
-    if (supabase) {
-      try {
-        await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-      } catch (err) {
-        console.error('Failed to update status in Supabase:', err);
-      }
+    try {
+      await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+    } catch (err) {
+      console.error('Failed to update status on server:', err);
     }
   }
 };
@@ -320,12 +321,10 @@ window.deleteProduct = async function(prodId) {
     products = products.filter(p => p.id !== prodId);
     renderProducts();
 
-    if (supabase) {
-      try {
-        await supabase.from('products').delete().eq('id', prodId);
-      } catch (err) {
-        console.error('Failed to delete product from Supabase:', err);
-      }
+    try {
+      await fetch(`/api/products/${prodId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to delete product on server:', err);
     }
   }
 };
@@ -453,25 +452,21 @@ productForm.addEventListener('submit', async (e) => {
 
   let finalImageUrl = uploadedImageUrl;
 
-  // If user selected a new file and Supabase is connected, upload to product-images bucket
-  if (selectedImageFile && supabase) {
+  // If user selected a new file, upload to GCS bucket via /api/upload
+  if (selectedImageFile) {
     try {
-      const ext = selectedImageFile.name.split('.').pop() || 'png';
-      const fileName = `${Date.now()}-${name.toLowerCase().replace(/\s+/g, '-')}.${ext}`;
-      const { data: uploadData, error: uploadErr } = await supabase.storage
-        .from('product-images')
-        .upload(fileName, selectedImageFile, { upsert: true });
-
-      if (!uploadErr && uploadData) {
-        const { data: publicUrlData } = supabase.storage
-          .from('product-images')
-          .getPublicUrl(fileName);
-        if (publicUrlData && publicUrlData.publicUrl) {
-          finalImageUrl = publicUrlData.publicUrl;
-        }
+      const formData = new FormData();
+      formData.append('file', selectedImageFile);
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success && data.url) {
+        finalImageUrl = data.url;
       }
     } catch (err) {
-      console.warn('Storage upload error, using local fallback:', err);
+      console.warn('GCS storage upload error, using local fallback:', err);
     }
   }
 
@@ -495,39 +490,44 @@ productForm.addEventListener('submit', async (e) => {
     products.push(productPayload);
   }
 
-  if (supabase) {
-    try {
-      await supabase.from('products').upsert(productPayload);
-    } catch (err) {
-      console.error('Failed to save to Supabase:', err);
-    }
+  try {
+    await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(productPayload)
+    });
+  } catch (err) {
+    console.error('Failed to save to database:', err);
   }
 
   renderProducts();
   closeModal();
 });
 
-// 8. Live Supabase Synchronization
-async function initSupabaseAndData() {
-  if (window.getSupabase) {
-    supabase = await window.getSupabase();
-  }
-
-  if (supabase) {
-    // 1. Fetch live products
-    try {
-      const { data: dbProducts, error: prodErr } = await supabase.from('products').select('*').order('num', { ascending: true });
-      if (!prodErr && dbProducts && dbProducts.length > 0) {
+// 8. Live Data Synchronization
+async function fetchProducts() {
+  try {
+    const res = await fetch('/api/products');
+    if (res.ok) {
+      const json = await res.json();
+      const dbProducts = json.data || json;
+      if (Array.isArray(dbProducts) && dbProducts.length > 0) {
         products = dbProducts;
+        renderProducts();
       }
-    } catch (e) {
-      console.warn('Error fetching products from Supabase:', e);
     }
+  } catch (e) {
+    console.warn('Error fetching products from server:', e);
+  }
+}
 
-    // 2. Fetch live orders
-    try {
-      const { data: dbOrders, error: orderErr } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-      if (!orderErr && dbOrders) {
+async function fetchOrders() {
+  try {
+    const res = await fetch('/api/orders');
+    if (res.ok) {
+      const json = await res.json();
+      const dbOrders = json.data || json;
+      if (Array.isArray(dbOrders)) {
         orders = dbOrders.map(o => ({
           id: o.id,
           date: o.created_at ? new Date(o.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Just now',
@@ -541,48 +541,17 @@ async function initSupabaseAndData() {
           utr: o.utr || 'Pending',
           status: o.status || 'pending'
         }));
+        renderOrders();
       }
-    } catch (e) {
-      console.warn('Error fetching orders from Supabase:', e);
     }
-
-    // 3. Realtime listener for incoming orders
-    try {
-      supabase.channel('admin-orders')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
-          console.log('⚡ Live order update received:', payload);
-          // Refetch or update orders list
-          if (payload.eventType === 'INSERT') {
-            const o = payload.new;
-            orders.unshift({
-              id: o.id,
-              date: new Date(o.created_at || Date.now()).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
-              customerName: o.customer_name || 'Anonymous',
-              customerPhone: o.customer_phone || 'N/A',
-              customerEmail: o.customer_email || '',
-              shippingAddress: o.shipping_address || '',
-              item: o.item,
-              size: o.size,
-              amount: Number(o.amount || 0),
-              utr: o.utr || 'Pending',
-              status: o.status || 'pending'
-            });
-            renderOrders();
-          } else if (payload.eventType === 'UPDATE') {
-            const idx = orders.findIndex(o => o.id === payload.new.id);
-            if (idx !== -1) {
-              orders[idx].status = payload.new.status;
-              orders[idx].utr = payload.new.utr;
-              renderOrders();
-            }
-          }
-        })
-        .subscribe();
-    } catch (e) {
-      console.warn('Realtime subscription failed:', e);
-    }
+  } catch (e) {
+    console.warn('Error fetching orders from server:', e);
   }
+}
 
-  renderOrders();
-  renderProducts();
+async function initSupabaseAndData() {
+  await fetchProducts();
+  await fetchOrders();
+  // Poll for live orders every 5 seconds
+  setInterval(fetchOrders, 5000);
 }

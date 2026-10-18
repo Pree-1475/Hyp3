@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f1f0e9">
   <title>HYP3 by Teepresso — Thermal Vinyl Streetwear</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/supabase-client.js"></script>
   <script src="assets/qrcode.min.js"></script>
   <style>
     :root {
@@ -1746,46 +1744,44 @@
       renderMobileSwitcher();
       setMobileFeatured(0);
 
-      // Fetch live products from Supabase if connected
-      if (window.getSupabase) {
-        try {
-          const sb = await window.getSupabase();
-          if (sb) {
-            const { data: dbProds, error } = await sb.from('products').select('*').order('num', { ascending: true });
-            if (!error && dbProds && dbProds.length > 0) {
-              // Merge db products into CATALOG
-              dbProds.forEach(dp => {
-                const existing = CATALOG.find(c => c.id === dp.id);
-                if (existing) {
-                  existing.name = dp.name;
-                  existing.price = Number(dp.price);
-                  existing.formattedPrice = `₹${Number(dp.price).toLocaleString('en-IN')}`;
-                  existing.image = dp.image;
-                  existing.desc = dp.description;
-                } else {
-                  CATALOG.push({
-                    id: dp.id,
-                    num: dp.num,
-                    name: dp.name,
-                    sub: dp.subtitle,
-                    price: Number(dp.price),
-                    formattedPrice: `₹${Number(dp.price).toLocaleString('en-IN')}`,
-                    image: dp.image,
-                    colorway: 'Standard Streetwear',
-                    colors: [{ name: 'Black', code: 'black', hex: '#111111' }],
-                    desc: dp.description,
-                    specs: []
-                  });
-                }
-              });
-              syncHeroProductImages();
-              renderCollectionGrid();
-              renderMobileSwitcher();
-            }
+      // Fetch live products from Neon DB via /api/products
+      try {
+        const res = await fetch('/api/products');
+        if (res.ok) {
+          const json = await res.json();
+          const dbProds = json.data || json;
+          if (Array.isArray(dbProds) && dbProds.length > 0) {
+            dbProds.forEach(dp => {
+              const existing = CATALOG.find(c => c.id === dp.id);
+              if (existing) {
+                existing.name = dp.name;
+                existing.price = Number(dp.price);
+                existing.formattedPrice = `₹${Number(dp.price).toLocaleString('en-IN')}`;
+                existing.image = dp.image;
+                existing.desc = dp.description || existing.desc;
+              } else {
+                CATALOG.push({
+                  id: dp.id,
+                  num: dp.num,
+                  name: dp.name,
+                  sub: dp.subtitle || 'Thermal Vinyl Graphic Tee',
+                  price: Number(dp.price),
+                  formattedPrice: `₹${Number(dp.price).toLocaleString('en-IN')}`,
+                  image: dp.image,
+                  colorway: 'Standard Streetwear',
+                  colors: [{ name: 'Black', code: 'black', hex: '#111111' }],
+                  desc: dp.description || '',
+                  specs: []
+                });
+              }
+            });
+            syncHeroProductImages();
+            renderCollectionGrid();
+            renderMobileSwitcher();
           }
-        } catch (e) {
-          console.warn('Could not sync storefront from Supabase:', e);
         }
+      } catch (e) {
+        console.warn('Could not sync storefront from API:', e);
       }
     });
 
@@ -2079,36 +2075,24 @@
       document.getElementById('sucItemName').textContent = `${currentOrder.product.name} • Size ${currentOrder.size}`;
       document.getElementById('sucAmount').textContent = currentOrder.formattedAmount;
 
-      // Insert into live Supabase if connected
-      if (window.getSupabase) {
-        window.getSupabase().then(sb => {
-          if (sb) {
-            sb.from('orders').insert({
-              id: currentOrder.orderId,
-              customer_name: (currentOrder.customer && currentOrder.customer.name) || 'Anonymous Customer',
-              customer_phone: (currentOrder.customer && currentOrder.customer.phone) || '',
-              customer_email: (currentOrder.customer && currentOrder.customer.email) || '',
-              shipping_address: (currentOrder.customer && currentOrder.customer.address) || '',
-              item: `${currentOrder.product.name} (${currentOrder.product.num || 'Drop'})`,
-              size: currentOrder.size,
-              amount: currentOrder.amount,
-              utr: utr,
-              status: 'pending'
-            }).then(({ error }) => {
-              if (error) console.warn('Supabase order insert error:', error);
-              else console.log('✅ Order synced to Supabase database!');
-            });
-          }
-        }).catch(() => {});
-      }
-
-      // Notify backend if active
+      // Submit and confirm order with backend (Neon DB)
       try {
-        fetch(`/api/orders/${currentOrder.orderId}/confirm`, {
+        fetch(`/api/orders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ utr })
-        }).catch(() => {});
+          body: JSON.stringify({
+            id: currentOrder.orderId,
+            customer_name: (currentOrder.customer && currentOrder.customer.name) || 'Anonymous Customer',
+            customer_phone: (currentOrder.customer && currentOrder.customer.phone) || '',
+            customer_email: (currentOrder.customer && currentOrder.customer.email) || '',
+            shipping_address: (currentOrder.customer && currentOrder.customer.address) || '',
+            item: `${currentOrder.product.name} (${currentOrder.product.num || 'Drop'})`,
+            size: currentOrder.size,
+            amount: currentOrder.amount,
+            utr: utr,
+            status: 'confirmed'
+          })
+        }).catch(err => console.warn('Order submission error:', err));
       } catch (e) {}
 
       showToast('PAYMENT VERIFIED! DISPATCH QUEUED');
