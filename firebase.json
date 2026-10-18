@@ -1,0 +1,24 @@
+{
+  "hosting": {
+    "site": "hyp3-shop",
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "server/**",
+      "Dockerfile",
+      "package*.json",
+      "firebase-debug.log"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "hyp3",
+          "region": "asia-south1"
+        }
+      }
+    ]
+  }
+}
